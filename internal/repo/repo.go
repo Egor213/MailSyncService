@@ -19,6 +19,9 @@ type Message interface {
 	GetByUID(ctx context.Context, mailboxID, uid, folder string) (*entity.Message, error)
 	GetLastUID(ctx context.Context, mailboxID, folder string) (string, error)
 	MarkSeen(ctx context.Context, id string) error
+
+	SaveBody(ctx context.Context, body *entity.MessageBody) error
+	GetBody(ctx context.Context, messageID string) (*entity.MessageBody, error)
 }
 
 type SyncJob interface {

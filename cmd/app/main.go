@@ -1,6 +1,6 @@
 package main
 
-import "app/internal/app"
+import "mail-sync-service/internal/app"
 
 func main() {
 	app.Run()

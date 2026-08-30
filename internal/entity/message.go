@@ -14,7 +14,15 @@ type Message struct {
 	BodyPreview    string    `db:"body_preview"`
 	HasAttachments bool      `db:"has_attachments"`
 	Seen           bool      `db:"seen"`
-	Flags          []string  `db:"flags"` // JSON array
+	Flags          []string  `db:"flags"`
 	SyncedAt       time.Time `db:"synced_at"`
 	Hash           string    `db:"hash"` // для дедупликации
+}
+
+type MessageBody struct {
+	MessageID string    `db:"message_id"`
+	Body      string    `db:"body"`
+	BodyHTML  string    `db:"body_html"`
+	CreatedAt time.Time `db:"created_at"`
+	UpdatedAt time.Time `db:"updated_at"`
 }

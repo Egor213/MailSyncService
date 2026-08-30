@@ -30,7 +30,7 @@ func ConfigureRouter(handler *echo.Echo, services *service.Services) {
 
 	api := handler.Group("/api/v1")
 	{
-		newOAuthRoutes(api.Group("/oauth"), services.OAuth)
+		newOAuthRoutes(api.Group("/auth"), services.OAuth)
 	}
 	// Можно добавить middleware для аутентификации, пока пусто
 	// authMW := mw.NewAuth(services.Auth)

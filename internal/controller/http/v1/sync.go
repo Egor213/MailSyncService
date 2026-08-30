@@ -19,8 +19,10 @@ func newSyncRoutes(g *echo.Group, syncService *service.SyncService) {
 
 func (h *SyncHandler) SyncNow(c echo.Context) error {
 	// ... запуск синхронизации через Kafka или напрямую
+	return nil
 }
 
 func (h *SyncHandler) Status(c echo.Context) error {
 	// ... возвращает последний статус синхронизации
+	return nil
 }

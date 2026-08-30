@@ -59,6 +59,8 @@ type OAuth struct {
 	MicrosoftClientSecret string `env:"MICROSOFT_CLIENT_SECRET"`
 	MailruClientID        string `env:"MAILRU_CLIENT_ID"`
 	MailruClientSecret    string `env:"MAILRU_CLIENT_SECRET"`
+	YandexClientID        string `env:"YANDEX_CLIENT_ID"`
+	YandexClientSecret    string `env:"YANDEX_CLIENT_SECRET"`
 	RedirectURI           string `env:"OAUTH_REDIRECT_URI" env-default:"http://localhost:8080/api/v1/auth/callback"`
 }
 

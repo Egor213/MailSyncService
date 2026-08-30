@@ -35,7 +35,6 @@ type Sync interface {
 
 type OAuth interface {
 	GetAuthURL(ctx context.Context, provider string) (string, error)
-	// HandleCallback(ctx context.Context, provider, code, state string) (*entity.Mailbox, error)
 	HandleCallback(ctx context.Context, provider, code, state string) (string, error)
 }
 

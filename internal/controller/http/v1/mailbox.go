@@ -1,4 +1,4 @@
-// package httpapi
+package httpapi
 
 // import (
 // 	"mail-sync-service/internal/controller/http/v1/dto"

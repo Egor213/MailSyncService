@@ -2,25 +2,21 @@ package service
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"mail-sync-service/internal/config"
-	"mail-sync-service/internal/entity"
 	"mail-sync-service/internal/repo"
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
-	"github.com/google/uuid"
-	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"golang.org/x/oauth2/mailru"
 	"golang.org/x/oauth2/microsoft"
+	"golang.org/x/oauth2/yandex"
 )
 
 type OAuthService struct {
@@ -50,37 +46,6 @@ type providerConfig struct {
 	Scopes       []string
 }
 
-// GetAuthURL возвращает URL для редиректа пользователя к провайдеру
-func (s *OAuthService) GetAuthURL(ctx context.Context, provider string) (string, error) {
-	cfg, err := s.getProviderConfig(provider)
-	if err != nil {
-		return "", err
-	}
-	oauth2Config := &oauth2.Config{
-		ClientID:     cfg.ClientID,
-		ClientSecret: cfg.ClientSecret,
-		RedirectURL:  cfg.RedirectURI,
-		Scopes:       cfg.Scopes,
-		Endpoint: oauth2.Endpoint{
-			AuthURL:  cfg.AuthURL,
-			TokenURL: cfg.TokenURL,
-		},
-	}
-	// Для разных провайдеров можно добавить параметры state, access_type и т.д.
-	url := oauth2Config.AuthCodeURL("state", oauth2.AccessTypeOffline)
-	return url, nil
-}
-
-// ExchangeCode обменивает код на токены
-func (s *OAuthService) ExchangeCode(ctx context.Context, code string) (*oauth2.Token, error) {
-	// Здесь нужно знать, от какого провайдера пришёл код.
-	// Можно передавать provider в state или в отдельном параметре.
-	// Для упрощения определяем по конфигурации (в реальном проекте лучше state).
-	// Мы можем сохранить provider в сессии перед редиректом.
-	// Пока вернём ошибку, если не знаем.
-	return nil, errors.New("not implemented: need provider from state")
-}
-
 func (s *OAuthService) getProviderConfig(provider string) (*providerConfig, error) {
 	switch provider {
 	case "google":
@@ -105,35 +70,39 @@ func (s *OAuthService) getProviderConfig(provider string) (*providerConfig, erro
 		return &providerConfig{
 			ClientID:     s.config.MailruClientID,
 			ClientSecret: s.config.MailruClientSecret,
-			AuthURL:      mailru.Endpoint.AuthURL,  // "https://o2.mail.ru/login"
-			TokenURL:     mailru.Endpoint.TokenURL, // "https://o2.mail.ru/token"
+			AuthURL:      mailru.Endpoint.AuthURL,
+			TokenURL:     mailru.Endpoint.TokenURL,
 			RedirectURI:  s.config.RedirectURI,
-			Scopes:       []string{"mail.imap", "userinfo"}, // обязательные скоупы[reference:2]
+			Scopes:       []string{"mail.imap", "userinfo"},
+		}, nil
+	case "yandex":
+		return &providerConfig{
+			ClientID:     s.config.YandexClientID,
+			ClientSecret: s.config.YandexClientSecret,
+			AuthURL:      yandex.Endpoint.AuthURL,
+			TokenURL:     yandex.Endpoint.TokenURL,
+			RedirectURI:  s.config.RedirectURI,
+			Scopes:       []string{"mail:imap", "login:email"},
 		}, nil
 	default:
 		return nil, errors.New("unsupported provider: " + provider)
 	}
 }
 
-// GetAuthURL генерирует URL для перенаправления пользователя
 func (s *OAuthService) GetAuthURL(ctx context.Context, provider string) (string, error) {
 	cfg, err := s.getProviderConfig(provider)
 	if err != nil {
 		return "", err
 	}
 
-	// Генерируем случайный state для CSRF-защиты (в реальном проекте нужно сохранить в сессии/БД)
-	stateBytes := make([]byte, 32)
-	if _, err := rand.Read(stateBytes); err != nil {
-		return "", err
-	}
-	state := base64.URLEncoding.EncodeToString(stateBytes)
+	stateData := "provider:" + provider
+	state := base64.URLEncoding.EncodeToString([]byte(stateData))
 
-	// Формируем URL
 	authURL, err := url.Parse(cfg.AuthURL)
 	if err != nil {
 		return "", err
 	}
+
 	q := authURL.Query()
 	q.Set("client_id", cfg.ClientID)
 	q.Set("redirect_uri", cfg.RedirectURI)
@@ -144,76 +113,75 @@ func (s *OAuthService) GetAuthURL(ctx context.Context, provider string) (string,
 		q.Set("access_type", "offline")
 		q.Set("prompt", "consent")
 	}
+
 	authURL.RawQuery = q.Encode()
 	return authURL.String(), nil
 }
 
-// HandleCallback обменивает код на токены и создаёт почтовый ящик
 func (s *OAuthService) HandleCallback(ctx context.Context, provider, code, state string) (string, error) {
 	cfg, err := s.getProviderConfig(provider)
 	if err != nil {
 		return "", err
 	}
 
-	// Обмен кода на токены
 	tokenResp, err := s.exchangeCode(ctx, cfg, code)
 	if err != nil {
 		return "", err
 	}
 
-	// Извлекаем email пользователя (для Google/Microsoft можно запросить /userinfo)
-	email, err := s.getUserEmail(ctx, provider, tokenResp.AccessToken)
-	if err != nil {
-		return "", err
-	}
+	fmt.Println(tokenResp)
 
-	// Создаём почтовый ящик
-	mb := &entity.Mailbox{
-		ID:           uuid.New().String(),
-		Email:        email,
-		Provider:     entity.Provider(provider),
-		Protocol:     entity.ProtocolIMAP, // или определять по настройкам
-		Server:       s.getServer(provider),
-		Port:         s.getPort(provider),
-		UseTLS:       true,
-		AuthType:     entity.AuthTypeOAuth2,
-		AccessToken:  tokenResp.AccessToken,
-		RefreshToken: tokenResp.RefreshToken,
-		TokenExpiry:  ptrTime(time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)),
-		IsActive:     true,
-	}
+	// Получаем email пользователя
+	// _, err = s.getUserEmail(ctx, provider, tokenResp.AccessToken)
+	// if err != nil {
+	// 	return "", err
+	// }
 
-	// Конвертируем строковые константы в ID
-	providerID := entity.ProviderToID[mb.Provider]
-	protocolID := entity.ProtocolToID[mb.Protocol]
-	authTypeID := entity.AuthTypeToID[mb.AuthType]
+	// Создаём почтовый ящик (как в вашем коде)
+	// mb := &entity.Mailbox{
+	// 	ID:           uuid.New().String(),
+	// 	Email:        email,
+	// 	Provider:     entity.Provider(provider),
+	// 	Protocol:     entity.ProtocolIMAP,
+	// 	Server:       s.getServer(provider),
+	// 	Port:         s.getPort(provider),
+	// 	UseTLS:       true,
+	// 	AuthType:     entity.AuthTypeOAuth2,
+	// 	AccessToken:  tokenResp.AccessToken,
+	// 	RefreshToken: tokenResp.RefreshToken,
+	// 	TokenExpiry:  ptrTime(time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)),
+	// 	IsActive:     true,
+	// }
 
-	// Перекладываем в структуру с числовыми ID
-	mbWithIDs := &entity.Mailbox{
-		ID:           mb.ID,
-		Email:        mb.Email,
-		ProviderID:   providerID,
-		ProtocolID:   protocolID,
-		Server:       mb.Server,
-		Port:         mb.Port,
-		UseTLS:       mb.UseTLS,
-		AuthTypeID:   authTypeID,
-		AccessToken:  mb.AccessToken,
-		RefreshToken: mb.RefreshToken,
-		TokenExpiry:  mb.TokenExpiry,
-		CreatedAt:    time.Now(),
-		UpdatedAt:    time.Now(),
-		IsActive:     true,
-	}
+	// // Конвертируем в числовые ID
+	// providerID := entity.ProviderToID[mb.Provider]
+	// protocolID := entity.ProtocolToID[mb.Protocol]
+	// authTypeID := entity.AuthTypeToID[mb.AuthType]
 
-	if err := s.mailboxRepo.Create(ctx, mbWithIDs); err != nil {
-		return "", err
-	}
+	// mbWithIDs := &entity.Mailbox{
+	// 	ID:           mb.ID,
+	// 	Email:        mb.Email,
+	// 	ProviderID:   providerID,
+	// 	ProtocolID:   protocolID,
+	// 	Server:       mb.Server,
+	// 	Port:         mb.Port,
+	// 	UseTLS:       mb.UseTLS,
+	// 	AuthTypeID:   authTypeID,
+	// 	AccessToken:  mb.AccessToken,
+	// 	RefreshToken: mb.RefreshToken,
+	// 	TokenExpiry:  mb.TokenExpiry,
+	// 	CreatedAt:    time.Now(),
+	// 	UpdatedAt:    time.Now(),
+	// 	IsActive:     true,
+	// }
 
-	return mb.ID, nil
+	// if err := s.mailboxRepo.Create(ctx, mbWithIDs); err != nil {
+	// 	return "", err
+	// }
+
+	return "1", nil
 }
 
-// exchangeCode обменивает код авторизации на токены
 func (s *OAuthService) exchangeCode(ctx context.Context, cfg *providerConfig, code string) (*tokenResponse, error) {
 	data := url.Values{}
 	data.Set("client_id", cfg.ClientID)
@@ -246,7 +214,6 @@ func (s *OAuthService) exchangeCode(ctx context.Context, cfg *providerConfig, co
 	return &token, nil
 }
 
-// getUserEmail получает email пользователя (для Google, Microsoft)
 func (s *OAuthService) getUserEmail(ctx context.Context, provider, accessToken string) (string, error) {
 	var userInfoURL string
 	switch provider {
@@ -254,6 +221,8 @@ func (s *OAuthService) getUserEmail(ctx context.Context, provider, accessToken s
 		userInfoURL = "https://www.googleapis.com/oauth2/v2/userinfo"
 	case "microsoft":
 		userInfoURL = "https://graph.microsoft.com/v1.0/me"
+	case "yandex":
+		userInfoURL = "https://login.yandex.ru/info?format=json"
 	default:
 		return "", errors.New("unsupported provider for userinfo")
 	}
@@ -275,31 +244,39 @@ func (s *OAuthService) getUserEmail(ctx context.Context, provider, accessToken s
 	}
 
 	var userInfo struct {
-		Email string `json:"email"`
+		Email        string `json:"email"`
+		DefaultEmail string `json:"default_email"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&userInfo); err != nil {
 		return "", err
 	}
-	if userInfo.Email == "" {
+
+	email := userInfo.Email
+	if email == "" && provider == "yandex" {
+		email = userInfo.DefaultEmail
+	}
+	if email == "" {
 		return "", errors.New("email not found in userinfo response")
 	}
-	return userInfo.Email, nil
+	return email, nil
+
 }
 
-// вспомогательные функции
 func (s *OAuthService) getServer(provider string) string {
 	switch provider {
 	case "google":
 		return "imap.gmail.com"
 	case "microsoft":
 		return "outlook.office365.com"
+	case "yandex":
+		return "imap.yandex.ru"
 	default:
 		return ""
 	}
 }
 
 func (s *OAuthService) getPort(provider string) int {
-	return 993 // все используют SSL
+	return 993
 }
 
 type tokenResponse struct {

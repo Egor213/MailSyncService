@@ -7,9 +7,11 @@ import (
 	errutils "mail-sync-service/pkg/errors"
 	"mail-sync-service/pkg/httpserver"
 	"mail-sync-service/pkg/logger"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/labstack/echo/v4"
 	log "github.com/sirupsen/logrus"
@@ -27,7 +29,7 @@ func Run() {
 	log.Info("Logger has been set up")
 
 	// Migrations
-	Migrate(cfg.PG.URL)
+	// Migrate(cfg.PG.URL)
 
 	// PostgreSQL
 	// pg, err := postgres.New(cfg.PG.URL, postgres.MaxPoolSize(cfg.PG.MaxPoolSize))
@@ -60,9 +62,28 @@ func Run() {
 	// mailboxService := service.NewMailboxService(mailboxRepo, msgRepo, syncJobRepo, locker, producer)
 	// syncService := service.NewSyncService(mailboxRepo, msgRepo, syncJobRepo, locker, nil, nil) // с фабриками
 
+	// PostgreSQL – раскомментируем
+	// pg, err := postgres.New(cfg.PG.URL, postgres.MaxPoolSize(cfg.PG.MaxPoolSize))
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+	// defer pg.Close()
+
+	// mailboxRepo := pgdb.NewMailboxRepo(pg)
+
+	// Сервис OAuth
+	oauthService := service.NewOAuthService(
+		&cfg.OAuth,
+		&http.Client{Timeout: 10 * time.Second},
+		// mailboxRepo,
+		nil,
+	)
 	// HTTP
 	e := echo.New()
-	httpapi.ConfigureRouter(e, &service.Services{Mailbox: mailboxService})
+	services := &service.Services{
+		OAuth: oauthService,
+	}
+	httpapi.ConfigureRouter(e, services)
 
 	httpServer := httpserver.New(e, httpserver.Address(cfg.HTTP.Address))
 
