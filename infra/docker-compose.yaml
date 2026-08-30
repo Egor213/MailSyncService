@@ -1,0 +1,24 @@
+name: go_app
+
+services:
+  psql:
+    env_file:
+      - .env
+    image: postgres:16-alpine
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    restart: unless-stopped
+    container_name: psql
+    networks:
+      - net
+
+
+volumes:
+  pg-data:
+    driver: local
+
+networks:
+  net:
+    driver: bridge
