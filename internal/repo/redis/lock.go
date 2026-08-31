@@ -10,6 +10,10 @@ type RedisLocker struct {
 	client *redispkg.Redis
 }
 
+func NewRedisLocker(client *redispkg.Redis) *RedisLocker {
+	return &RedisLocker{client: client}
+}
+
 func (l *RedisLocker) Lock(ctx context.Context, key string, ttl time.Duration) (bool, error) {
 	return l.client.Lock(ctx, key, ttl)
 }

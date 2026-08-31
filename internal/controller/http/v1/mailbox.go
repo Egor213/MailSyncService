@@ -1,26 +1,43 @@
 package httpapi
 
-// import (
-// 	"mail-sync-service/internal/controller/http/v1/dto"
-// 	"mail-sync-service/internal/service"
-// 	"net/http"
+import (
+	"errors"
+	httpdto "mail-sync-service/internal/controller/http/v1/dto"
+	repoerrs "mail-sync-service/internal/repo/errors"
+	"mail-sync-service/internal/service"
+	"net/http"
 
-// 	"github.com/labstack/echo/v4"
-// )
+	"github.com/labstack/echo/v4"
+)
 
-// type MailboxHandler struct {
-// 	mailboxService *service.MailboxService
-// }
+type MailboxHandler struct {
+	mailboxService service.Mailbox
+	syncService    service.SyncService
+}
 
-// func newMailboxRoutes(g *echo.Group, mailboxService *service.MailboxService) {
-// 	h := &MailboxHandler{mailboxService: mailboxService}
+func newMailboxRoutes(g *echo.Group, mailboxService *service.MailboxService) {
+	h := &MailboxHandler{mailboxService: mailboxService}
 
-// 	g.POST("", h.Create)               // POST /api/v1/mailboxes
-// 	g.GET("/:id", h.Get)               // GET /api/v1/mailboxes/:id
-// 	g.PUT("/:id", h.Update)            // PUT /api/v1/mailboxes/:id
-// 	g.DELETE("/:id", h.Delete)         // DELETE /api/v1/mailboxes/:id
-// 	g.POST("/:id/sync", h.TriggerSync) // POST /api/v1/mailboxes/:id/sync
-// }
+	// g.POST("", h.Create)               // POST /api/v1/mailboxes
+	// g.GET("/:id", h.Get)               // GET /api/v1/mailboxes/:id
+	// g.PUT("/:id", h.Update)            // PUT /api/v1/mailboxes/:id
+	// g.DELETE("/:id", h.Delete)         // DELETE /api/v1/mailboxes/:id
+	g.POST("/:id/sync", h.TriggerSync) // POST /api/v1/mailboxes/:id/sync
+}
+
+func (h *MailboxHandler) TriggerSync(c echo.Context) error {
+	id := c.Param("id")
+	ctx := c.Request().Context()
+
+	err := h.syncService.SyncMailbox(ctx, id)
+	if err != nil {
+		if errors.Is(err, repoerrs.ErrNotFound) {
+			return c.JSON(http.StatusNotFound, httpdto.ErrorOutput{Message: "mailbox not found"})
+		}
+		return c.JSON(http.StatusInternalServerError, httpdto.ErrorOutput{Message: err.Error()})
+	}
+	return c.NoContent(http.StatusAccepted)
+}
 
 // func (h *MailboxHandler) Create(c echo.Context) error {
 // 	var req dto.CreateMailboxRequest

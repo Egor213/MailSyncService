@@ -36,6 +36,7 @@ type Sync interface {
 type OAuth interface {
 	GetAuthURL(ctx context.Context, provider string) (string, error)
 	HandleCallback(ctx context.Context, provider, code, state string) (string, error)
+	RefreshToken(ctx context.Context, provider string, refreshToken string) (*tokenResponse, error)
 }
 
 type Services struct {
@@ -46,7 +47,7 @@ type Services struct {
 
 type ServicesDependencies struct {
 	Repos  *repo.Repositories
-	Locker redis.RedisLocker
+	Locker redis.Locker
 
 	KafkaProducer kafka.KafkaProducer
 
@@ -56,14 +57,6 @@ type ServicesDependencies struct {
 }
 
 func NewServices(deps ServicesDependencies) *Services {
-	syncService := NewSyncService(
-		deps.Repos.Mb,
-		deps.Repos.Msg,
-		deps.Repos.Sj,
-		deps.Repos.Refs,
-		deps.Locker,
-	)
-
 	mailboxService := NewMailboxService(
 		deps.Repos.Mb,
 		deps.Repos.Refs,
@@ -74,6 +67,15 @@ func NewServices(deps ServicesDependencies) *Services {
 		&deps.Config.OAuth,
 		deps.HTTPClient,
 		mailboxService,
+	)
+
+	syncService := NewSyncService(
+		deps.Repos.Mb,
+		deps.Repos.Msg,
+		deps.Repos.Sj,
+		deps.Repos.Refs,
+		deps.Locker,
+		oauthService,
 	)
 
 	return &Services{
