@@ -1,6 +1,5 @@
 CREATE SCHEMA IF NOT EXISTS mail_sync;
 
-
 CREATE TABLE mail_sync.providers (
     id          SERIAL,
     name        TEXT NOT NULL UNIQUE,
@@ -28,16 +27,6 @@ CREATE TABLE mail_sync.sync_statuses (
     created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
     CONSTRAINT sync_statuses_pkey PRIMARY KEY (id)
 );
-
-CREATE TABLE mail_sync.message_bodies (
-    message_id UUID PRIMARY KEY REFERENCES mail_sync.messages(id) ON DELETE CASCADE,
-    body TEXT,
-    body_html TEXT,
-    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-);
-
-
 
 CREATE TABLE mail_sync.mailboxes (
     id              UUID,
@@ -85,6 +74,14 @@ CREATE TABLE mail_sync.messages (
     CONSTRAINT messages_mailbox_folder_uid_unique UNIQUE (mailbox_id, folder, uid)
 );
 
+CREATE TABLE mail_sync.message_bodies (
+    message_id UUID PRIMARY KEY REFERENCES mail_sync.messages(id) ON DELETE CASCADE,
+    body TEXT,
+    body_html TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE mail_sync.sync_jobs (
     id              UUID,
     mailbox_id      UUID NOT NULL,
@@ -101,7 +98,6 @@ CREATE TABLE mail_sync.sync_jobs (
         REFERENCES mail_sync.sync_statuses(id) ON DELETE RESTRICT
 );
 
-
 CREATE INDEX idx_mailboxes_active ON mail_sync.mailboxes(is_active);
 CREATE INDEX idx_mailboxes_provider_id ON mail_sync.mailboxes(provider_id);
 CREATE INDEX idx_mailboxes_protocol_id ON mail_sync.mailboxes(protocol_id);
@@ -109,12 +105,6 @@ CREATE INDEX idx_mailboxes_auth_type_id ON mail_sync.mailboxes(auth_type_id);
 CREATE INDEX idx_messages_mailbox_folder ON mail_sync.messages(mailbox_id, folder);
 CREATE INDEX idx_sync_jobs_mailbox_id ON mail_sync.sync_jobs(mailbox_id);
 CREATE INDEX idx_message_bodies_created_at ON mail_sync.message_bodies(created_at);
-
-
-
--- ============================================================
--- Заполнение справочников начальными данными
--- ============================================================
 
 INSERT INTO mail_sync.providers (id, name) VALUES
     (1, 'gmail'),

@@ -29,7 +29,7 @@ func Run() {
 	log.Info("Logger has been set up")
 
 	// Migrations
-	// Migrate(cfg.PG.URL)
+	Migrate(cfg.PG.URL)
 
 	// PostgreSQL
 	// pg, err := postgres.New(cfg.PG.URL, postgres.MaxPoolSize(cfg.PG.MaxPoolSize))
