@@ -3,6 +3,8 @@ package repo
 import (
 	"context"
 	"mail-sync-service/internal/entity"
+	"mail-sync-service/internal/repo/pgdb"
+	"mail-sync-service/pkg/postgres"
 )
 
 type Mailbox interface {
@@ -35,4 +37,20 @@ type Reference interface {
 	GetProtocolID(ctx context.Context, name string) (int, error)
 	GetAuthTypeID(ctx context.Context, name string) (int, error)
 	GetSyncStatusID(ctx context.Context, name string) (int, error)
+}
+
+type Repositories struct {
+	Msg  Message
+	Sj   SyncJob
+	Mb   Mailbox
+	Refs Reference
+}
+
+func NewRepositories(pg *postgres.Postgres) *Repositories {
+	return &Repositories{
+		Msg:  pgdb.NewMessageRepo(pg),
+		Sj:   pgdb.NewSyncJobRepo(pg),
+		Mb:   pgdb.NewMailboxRepo(pg),
+		Refs: pgdb.NewReferenceRepo(pg),
+	}
 }

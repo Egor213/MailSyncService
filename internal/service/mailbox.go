@@ -2,10 +2,13 @@ package service
 
 import (
 	"context"
+	"errors"
 	"mail-sync-service/internal/entity"
 	"mail-sync-service/internal/infrastruct/kafka"
 	"mail-sync-service/internal/repo"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type MailboxService struct {
@@ -41,7 +44,48 @@ type CreateMailboxInput struct {
 }
 
 func (s *MailboxService) CreateMailbox(ctx context.Context, in CreateMailboxInput) (*entity.Mailbox, error) {
-	return nil, nil
+	providerID, err := s.refRepo.GetProviderID(ctx, in.Provider)
+	if err != nil {
+		return nil, errors.New("unknown provider: " + in.Provider)
+	}
+	protocolID, err := s.refRepo.GetProtocolID(ctx, in.Protocol)
+	if err != nil {
+		return nil, errors.New("unknown protocol: " + in.Protocol)
+	}
+	authTypeID, err := s.refRepo.GetAuthTypeID(ctx, in.AuthType)
+	if err != nil {
+		return nil, errors.New("unknown auth type: " + in.AuthType)
+	}
+
+	now := time.Now()
+	mb := &entity.Mailbox{
+		ID:           uuid.New().String(),
+		Email:        in.Email,
+		ProviderID:   providerID,
+		ProtocolID:   protocolID,
+		Server:       in.Server,
+		Port:         in.Port,
+		UseTLS:       in.UseTLS,
+		AuthTypeID:   authTypeID,
+		AccessToken:  in.AccessToken,
+		RefreshToken: in.RefreshToken,
+		TokenExpiry:  in.TokenExpiry,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+		IsActive:     true,
+	}
+
+	if err := s.mailboxRepo.Create(ctx, mb); err != nil {
+		return nil, err
+	}
+
+	// Отправляем событие в Kafka (если нужно)
+	// if err := s.producer.PublishSyncEvent(ctx, mb.ID); err != nil {
+	//     // логируем, но не прерываем создание
+	//     // log.WithError(err).Warn("failed to publish sync event")
+	// }
+
+	return mb, nil
 }
 
 func (s *MailboxService) GetMailbox(ctx context.Context, id string) (*entity.Mailbox, error) {

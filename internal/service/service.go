@@ -10,7 +10,7 @@ import (
 	"mail-sync-service/internal/repo"
 	"mail-sync-service/internal/repo/redis"
 
-	"github.com/avito-tech/go-transaction-manager/trm"
+	"github.com/avito-tech/go-transaction-manager/trm/v2"
 )
 
 type TRManager interface {
@@ -45,38 +45,35 @@ type Services struct {
 }
 
 type ServicesDependencies struct {
-	MailboxRepo repo.Mailbox
-	MessageRepo repo.Message
-	SyncJobRepo repo.SyncJob
-	RefRepo     repo.Reference
-	Locker      redis.RedisLocker
+	Repos  *repo.Repositories
+	Locker redis.RedisLocker
 
 	KafkaProducer kafka.KafkaProducer
 
-	OAuthConfig *config.OAuth
-	HTTPClient  *http.Client
-	TrManager   TRManager
+	Config     *config.Config
+	HTTPClient *http.Client
+	TrManager  TRManager
 }
 
 func NewServices(deps ServicesDependencies) *Services {
 	syncService := NewSyncService(
-		deps.MailboxRepo,
-		deps.MessageRepo,
-		deps.SyncJobRepo,
-		deps.RefRepo,
+		deps.Repos.Mb,
+		deps.Repos.Msg,
+		deps.Repos.Sj,
+		deps.Repos.Refs,
 		deps.Locker,
 	)
 
-	oauthService := NewOAuthService(
-		deps.OAuthConfig,
-		deps.HTTPClient,
-		deps.MailboxRepo,
+	mailboxService := NewMailboxService(
+		deps.Repos.Mb,
+		deps.Repos.Refs,
+		deps.KafkaProducer,
 	)
 
-	mailboxService := NewMailboxService(
-		deps.MailboxRepo,
-		deps.RefRepo,
-		deps.KafkaProducer,
+	oauthService := NewOAuthService(
+		&deps.Config.OAuth,
+		deps.HTTPClient,
+		mailboxService,
 	)
 
 	return &Services{

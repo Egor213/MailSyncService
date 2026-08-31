@@ -8,14 +8,11 @@ import (
 	"fmt"
 	"io"
 	"mail-sync-service/internal/config"
-	"mail-sync-service/internal/entity"
-	"mail-sync-service/internal/repo"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"golang.org/x/oauth2/google"
 	"golang.org/x/oauth2/mailru"
 	"golang.org/x/oauth2/microsoft"
@@ -23,20 +20,20 @@ import (
 )
 
 type OAuthService struct {
-	config      *config.OAuth
-	httpClient  *http.Client
-	mailBoxRepo repo.Mailbox
+	config         *config.OAuth
+	httpClient     *http.Client
+	mailboxService Mailbox
 }
 
 func NewOAuthService(
 	cfg *config.OAuth,
 	httpClient *http.Client,
-	mailBoxRepo repo.Mailbox,
+	mailboxService Mailbox,
 ) *OAuthService {
 	return &OAuthService{
-		config:      cfg,
-		httpClient:  httpClient,
-		mailBoxRepo: mailBoxRepo,
+		config:         cfg,
+		httpClient:     httpClient,
+		mailboxService: mailboxService,
 	}
 }
 
@@ -137,34 +134,26 @@ func (s *OAuthService) HandleCallback(ctx context.Context, provider, code, state
 		return "", err
 	}
 
-	providerID := entity.ProviderToID[entity.Provider(provider)]
-	protocolID := entity.ProtocolToID[entity.ProtocolIMAP]
-	authTypeID := entity.AuthTypeToID[entity.AuthTypeOAuth2]
-
 	now := time.Now()
 	expiry := now.Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
 
-	mailbox := &entity.Mailbox{
-		ID:           uuid.New().String(),
+	input := CreateMailboxInput{
 		Email:        email,
-		ProviderID:   providerID,
-		ProtocolID:   protocolID,
+		Provider:     provider,
+		Protocol:     "imap",
 		Server:       s.getServer(provider),
 		Port:         s.getPort(provider),
 		UseTLS:       true,
-		AuthTypeID:   authTypeID,
+		AuthType:     "oauth2",
 		AccessToken:  tokenResp.AccessToken,
 		RefreshToken: tokenResp.RefreshToken,
 		TokenExpiry:  &expiry,
-		CreatedAt:    now,
-		UpdatedAt:    now,
-		IsActive:     true,
 	}
 
-	// if err := s.mailboxRepo.Create(ctx, mailbox); err != nil {
-	//     return "", err
-	// }
-
+	mailbox, err := s.mailboxService.CreateMailbox(ctx, input)
+	if err != nil {
+		return "", err
+	}
 	return mailbox.ID, nil
 }
 

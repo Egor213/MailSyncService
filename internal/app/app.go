@@ -3,16 +3,20 @@ package app
 import (
 	"mail-sync-service/internal/config"
 	httpapi "mail-sync-service/internal/controller/http/v1"
+	"mail-sync-service/internal/repo"
 	"mail-sync-service/internal/service"
 	errutils "mail-sync-service/pkg/errors"
 	"mail-sync-service/pkg/httpserver"
 	"mail-sync-service/pkg/logger"
+	"mail-sync-service/pkg/postgres"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	trmpgx "github.com/avito-tech/go-transaction-manager/drivers/pgxv5/v2"
+	"github.com/avito-tech/go-transaction-manager/trm/v2/manager"
 	"github.com/labstack/echo/v4"
 	log "github.com/sirupsen/logrus"
 )
@@ -31,25 +35,12 @@ func Run() {
 	// Migrations
 	Migrate(cfg.PG.URL)
 
-	// PostgreSQL
-	// pg, err := postgres.New(cfg.PG.URL, postgres.MaxPoolSize(cfg.PG.MaxPoolSize))
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-	// defer pg.Close()
-
 	// Redis
 	// redisClient, err := redispkg.New(cfg.Redis.Address, cfg.Redis.Password, cfg.Redis.DB)
 	// if err != nil {
 	// 	log.Fatal(err)
 	// }
 	// defer redisClient.Close()
-
-	// Репозитории
-	// mailboxRepo := pgdb.NewMailboxRepo(pg)
-	// msgRepo := pgdb.NewMessageRepo(pg)
-	// syncJobRepo := pgdb.NewSyncJobRepo(pg)
-	// locker := redis.NewLocker(redisClient)
 
 	// Kafka Producer
 	// producer, err := kafka.NewProducer(cfg.Kafka.Brokers, cfg.Kafka.Topic)
@@ -58,31 +49,30 @@ func Run() {
 	// }
 	// defer producer.Close()
 
-	// Сервисы
-	// mailboxService := service.NewMailboxService(mailboxRepo, msgRepo, syncJobRepo, locker, producer)
-	// syncService := service.NewSyncService(mailboxRepo, msgRepo, syncJobRepo, locker, nil, nil) // с фабриками
-
 	// PostgreSQL – раскомментируем
-	// pg, err := postgres.New(cfg.PG.URL, postgres.MaxPoolSize(cfg.PG.MaxPoolSize))
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-	// defer pg.Close()
+	pg, err := postgres.New(cfg.PG.URL, postgres.MaxPoolSize(cfg.PG.MaxPoolSize))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer pg.Close()
 
-	// mailboxRepo := pgdb.NewMailboxRepo(pg)
+	// Repos
+	repositories := repo.NewRepositories(pg)
 
-	// Сервис OAuth
-	oauthService := service.NewOAuthService(
-		&cfg.OAuth,
-		&http.Client{Timeout: 10 * time.Second},
-		// mailboxRepo,
-		nil,
-	)
+	// Transaction manager
+	trManager := manager.Must(trmpgx.NewDefaultFactory(pg.Pool))
+
+	// Services
+	deps := service.ServicesDependencies{
+		Repos:      repositories,
+		TrManager:  trManager,
+		HTTPClient: &http.Client{Timeout: 10 * time.Second},
+		Config:     cfg,
+	}
+	services := service.NewServices(deps)
+
 	// HTTP
 	e := echo.New()
-	services := &service.Services{
-		OAuth: oauthService,
-	}
 	httpapi.ConfigureRouter(e, services)
 
 	httpServer := httpserver.New(e, httpserver.Address(cfg.HTTP.Address))
