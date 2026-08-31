@@ -8,11 +8,14 @@ import (
 	"fmt"
 	"io"
 	"mail-sync-service/internal/config"
+	"mail-sync-service/internal/entity"
 	"mail-sync-service/internal/repo"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
+	"github.com/google/uuid"
 	"golang.org/x/oauth2/google"
 	"golang.org/x/oauth2/mailru"
 	"golang.org/x/oauth2/microsoft"
@@ -82,7 +85,7 @@ func (s *OAuthService) getProviderConfig(provider string) (*providerConfig, erro
 			AuthURL:      yandex.Endpoint.AuthURL,
 			TokenURL:     yandex.Endpoint.TokenURL,
 			RedirectURI:  s.config.RedirectURI,
-			Scopes:       []string{"mail:imap", "login:email"},
+			Scopes:       []string{},
 		}, nil
 	default:
 		return nil, errors.New("unsupported provider: " + provider)
@@ -129,57 +132,40 @@ func (s *OAuthService) HandleCallback(ctx context.Context, provider, code, state
 		return "", err
 	}
 
-	fmt.Println(tokenResp)
+	email, err := s.getUserEmail(ctx, provider, tokenResp.AccessToken)
+	if err != nil {
+		return "", err
+	}
 
-	// Получаем email пользователя
-	// _, err = s.getUserEmail(ctx, provider, tokenResp.AccessToken)
-	// if err != nil {
-	// 	return "", err
+	providerID := entity.ProviderToID[entity.Provider(provider)]
+	protocolID := entity.ProtocolToID[entity.ProtocolIMAP]
+	authTypeID := entity.AuthTypeToID[entity.AuthTypeOAuth2]
+
+	now := time.Now()
+	expiry := now.Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
+
+	mailbox := &entity.Mailbox{
+		ID:           uuid.New().String(),
+		Email:        email,
+		ProviderID:   providerID,
+		ProtocolID:   protocolID,
+		Server:       s.getServer(provider),
+		Port:         s.getPort(provider),
+		UseTLS:       true,
+		AuthTypeID:   authTypeID,
+		AccessToken:  tokenResp.AccessToken,
+		RefreshToken: tokenResp.RefreshToken,
+		TokenExpiry:  &expiry,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+		IsActive:     true,
+	}
+
+	// if err := s.mailboxRepo.Create(ctx, mailbox); err != nil {
+	//     return "", err
 	// }
 
-	// Создаём почтовый ящик (как в вашем коде)
-	// mb := &entity.Mailbox{
-	// 	ID:           uuid.New().String(),
-	// 	Email:        email,
-	// 	Provider:     entity.Provider(provider),
-	// 	Protocol:     entity.ProtocolIMAP,
-	// 	Server:       s.getServer(provider),
-	// 	Port:         s.getPort(provider),
-	// 	UseTLS:       true,
-	// 	AuthType:     entity.AuthTypeOAuth2,
-	// 	AccessToken:  tokenResp.AccessToken,
-	// 	RefreshToken: tokenResp.RefreshToken,
-	// 	TokenExpiry:  ptrTime(time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)),
-	// 	IsActive:     true,
-	// }
-
-	// // Конвертируем в числовые ID
-	// providerID := entity.ProviderToID[mb.Provider]
-	// protocolID := entity.ProtocolToID[mb.Protocol]
-	// authTypeID := entity.AuthTypeToID[mb.AuthType]
-
-	// mbWithIDs := &entity.Mailbox{
-	// 	ID:           mb.ID,
-	// 	Email:        mb.Email,
-	// 	ProviderID:   providerID,
-	// 	ProtocolID:   protocolID,
-	// 	Server:       mb.Server,
-	// 	Port:         mb.Port,
-	// 	UseTLS:       mb.UseTLS,
-	// 	AuthTypeID:   authTypeID,
-	// 	AccessToken:  mb.AccessToken,
-	// 	RefreshToken: mb.RefreshToken,
-	// 	TokenExpiry:  mb.TokenExpiry,
-	// 	CreatedAt:    time.Now(),
-	// 	UpdatedAt:    time.Now(),
-	// 	IsActive:     true,
-	// }
-
-	// if err := s.mailboxRepo.Create(ctx, mbWithIDs); err != nil {
-	// 	return "", err
-	// }
-
-	return "1", nil
+	return mailbox.ID, nil
 }
 
 func (s *OAuthService) exchangeCode(ctx context.Context, cfg *providerConfig, code string) (*tokenResponse, error) {
@@ -198,18 +184,29 @@ func (s *OAuthService) exchangeCode(ctx context.Context, cfg *providerConfig, co
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response body: %w", err)
+	}
+
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("token exchange failed: %s", body)
+		var errResp struct {
+			Error            string `json:"error"`
+			ErrorDescription string `json:"error_description"`
+		}
+		if err := json.Unmarshal(body, &errResp); err == nil && errResp.Error != "" {
+			return nil, fmt.Errorf("token exchange failed: %s - %s", errResp.Error, errResp.ErrorDescription)
+		}
+		return nil, fmt.Errorf("token exchange failed: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
 	var token tokenResponse
-	if err := json.NewDecoder(resp.Body).Decode(&token); err != nil {
-		return nil, err
+	if err := json.Unmarshal(body, &token); err != nil {
+		return nil, fmt.Errorf("decode token response: %w", err)
 	}
 	return &token, nil
 }

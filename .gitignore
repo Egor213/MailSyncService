@@ -2,3 +2,4 @@
 go.sum
 collector.py
 all_py.txt
+logfile.log

@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"encoding/base64"
-	"fmt"
 	httpdto "mail-sync-service/internal/controller/http/v1/dto"
 	"mail-sync-service/internal/service"
 	"net/http"
@@ -32,7 +31,6 @@ func (h *OAuthHandler) Login(c echo.Context) error {
 }
 
 func (h *OAuthHandler) Callback(c echo.Context) error {
-	fmt.Println("AAAAAAAAAAAA")
 	code := c.QueryParam("code")
 	state := c.QueryParam("state")
 	if code == "" || state == "" {
