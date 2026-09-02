@@ -3,15 +3,16 @@ package service
 import (
 	"context"
 	"mail-sync-service/internal/entity"
+	"mail-sync-service/internal/repo"
 	"mail-sync-service/internal/repo/clickhouse"
 	"time"
 )
 
 type MetricsService struct {
-	metricsRepo *clickhouse.MetricsRepo
+	metricsRepo repo.Metrics
 }
 
-func NewMetricsService(metricsRepo *clickhouse.MetricsRepo) *MetricsService {
+func NewMetricsService(metricsRepo repo.Metrics) *MetricsService {
 	return &MetricsService{metricsRepo: metricsRepo}
 }
 

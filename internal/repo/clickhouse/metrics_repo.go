@@ -76,7 +76,7 @@ func (r *MetricsRepo) GetOverviewStats(ctx context.Context, since time.Time) (*A
 		stats.TotalSyncs += total
 		stats.SuccessSyncs += success
 		stats.FailedSyncs += failed
-		stats.AvgDurationMs += avgDuration * float64(total) // weighted average позже
+		stats.AvgDurationMs += avgDuration * float64(total)
 		stats.TotalMessages += totalMsgs
 		stats.ByProvider[provider] = total
 	}

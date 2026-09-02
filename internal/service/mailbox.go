@@ -29,7 +29,6 @@ func NewMailboxService(
 	}
 }
 
-// CreateMailboxInput – DTO для создания ящика (принимает строковые названия)
 type CreateMailboxInput struct {
 	Email        string
 	Provider     string // "gmail", "outlook" и т.д.
@@ -80,7 +79,7 @@ func (s *MailboxService) CreateMailbox(ctx context.Context, in CreateMailboxInpu
 		return nil, err
 	}
 
-	// Отправляем событие в Kafka (если нужно)
+	// Отправляем событие в Kafka
 	// if err := s.producer.PublishSyncEvent(ctx, mb.ID); err != nil {
 	//     // логируем, но не прерываем создание
 	//     // log.WithError(err).Warn("failed to publish sync event")

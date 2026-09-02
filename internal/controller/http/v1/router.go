@@ -15,7 +15,6 @@ import (
 )
 
 func ConfigureRouter(handler *echo.Echo, services *service.Services) {
-	// Логирование
 	logFile := setLogsFile()
 	multiWriter := io.MultiWriter(os.Stdout, logFile)
 	handler.Use(middleware.LoggerWithConfig(middleware.LoggerConfig{
@@ -23,7 +22,6 @@ func ConfigureRouter(handler *echo.Echo, services *service.Services) {
 	}))
 	handler.Use(middleware.Recover())
 
-	// Healthcheck
 	handler.GET("/health", func(c echo.Context) error {
 		return c.String(http.StatusOK, "ok")
 	})
@@ -31,12 +29,13 @@ func ConfigureRouter(handler *echo.Echo, services *service.Services) {
 	api := handler.Group("/api/v1")
 	{
 		newOAuthRoutes(api.Group("/auth"), services.OAuth)
+		newSearchRoutes(api.Group("/search"), services.Search)
+		newMessageRoutes(api.Group(""), services.Search)
+		newMetricsRoutes(api.Group("/metrics"), services.Metrics)
 	}
-	// Можно добавить middleware для аутентификации, пока пусто
-	// authMW := mw.NewAuth(services.Auth)
 
 	newMailboxRoutes(api.Group("/mailboxes"), services.Mailbox, services.Sync)
-	// newSyncRoutes(api.Group("/sync"), services.Sync)
+	newSyncRoutes(api.Group("/sync"), services.Sync)
 }
 
 func setLogsFile() *os.File {

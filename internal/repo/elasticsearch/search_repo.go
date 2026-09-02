@@ -56,12 +56,12 @@ func (r *SearchRepo) Search(ctx context.Context, input SearchInput) (*SearchResu
 		return nil, fmt.Errorf("encode query: %w", err)
 	}
 
-	res, err := r.client.Search(
-		r.client.Search.WithContext(ctx),
-		r.client.Search.WithIndex(r.index),
-		r.client.Search.WithBody(&buf),
-		r.client.Search.WithSize(input.Size),
-		r.client.Search.WithFrom(from),
+	res, err := r.client.Client.Search(
+		r.client.Client.Search.WithContext(ctx),
+		r.client.Client.Search.WithIndex(r.index),
+		r.client.Client.Search.WithBody(&buf),
+		r.client.Client.Search.WithSize(input.Size),
+		r.client.Client.Search.WithFrom(from),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("elastic search: %w", err)
@@ -110,11 +110,11 @@ func (r *SearchRepo) IndexMessage(ctx context.Context, msg *entity.Message) erro
 		"flags":           msg.Flags,
 		"synced_at":       msg.SyncedAt,
 	}
-	_, err := r.client.Index(
+	_, err := r.client.Client.Index(
 		r.index,
 		bytes.NewReader(mustJSON(doc)),
-		r.client.Index.WithContext(ctx),
-		r.client.Index.WithDocumentID(msg.ID),
+		r.client.Client.Index.WithContext(ctx),
+		r.client.Client.Index.WithDocumentID(msg.ID),
 	)
 	return err
 }
@@ -127,20 +127,20 @@ func (r *SearchRepo) IndexMessageBody(ctx context.Context, messageID, body, body
 		},
 	}
 	bodyBytes := mustJSON(update)
-	_, err := r.client.Update(
+	_, err := r.client.Client.Update(
 		r.index,
 		messageID,
 		bytes.NewReader(bodyBytes),
-		r.client.Update.WithContext(ctx),
+		r.client.Client.Update.WithContext(ctx),
 	)
 	return err
 }
 
 func (r *SearchRepo) GetBody(ctx context.Context, messageID string) (string, string, error) {
-	res, err := r.client.Get(
+	res, err := r.client.Client.Get(
 		r.index,
 		messageID,
-		r.client.Get.WithContext(ctx),
+		r.client.Client.Get.WithContext(ctx),
 	)
 	if err != nil {
 		return "", "", err

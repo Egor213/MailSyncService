@@ -18,12 +18,14 @@ import (
 )
 
 type SyncService struct {
-	mailboxRepo  repo.Mailbox
-	msgRepo      repo.Message
-	syncJobRepo  repo.SyncJob
-	refRepo      repo.Reference
-	locker       redis.Locker
-	oauthService OAuth
+	mailboxRepo    repo.Mailbox
+	msgRepo        repo.Message
+	syncJobRepo    repo.SyncJob
+	refRepo        repo.Reference
+	locker         redis.Locker
+	oauthService   OAuth
+	searchService  Search
+	metricsService Metrics
 }
 
 func NewSyncService(
@@ -33,14 +35,18 @@ func NewSyncService(
 	refRepo repo.Reference,
 	l redis.Locker,
 	oauthService OAuth,
+	searchService Search,
+	metricsService Metrics,
 ) *SyncService {
 	return &SyncService{
-		mailboxRepo:  mailRepo,
-		msgRepo:      msgRepo,
-		syncJobRepo:  syncJobRepo,
-		refRepo:      refRepo,
-		locker:       l,
-		oauthService: oauthService,
+		mailboxRepo:    mailRepo,
+		msgRepo:        msgRepo,
+		syncJobRepo:    syncJobRepo,
+		refRepo:        refRepo,
+		locker:         l,
+		oauthService:   oauthService,
+		searchService:  searchService,
+		metricsService: metricsService,
 	}
 }
 
@@ -90,6 +96,7 @@ func (s *SyncService) SyncMailbox(ctx context.Context, mailboxID string) error {
 	if err != nil {
 		return fmt.Errorf("get running status: %w", err)
 	}
+	syncStartedAt := time.Now()
 	jobID := uuid.New().String()
 	now := time.Now()
 	job := &entity.SyncJob{
@@ -167,6 +174,17 @@ func (s *SyncService) SyncMailbox(ctx context.Context, mailboxID string) error {
 			if err := s.msgRepo.SaveBody(ctx, bodyEntity); err != nil {
 				log.WithError(err).WithField("uid", meta.UID).Warn("save body failed")
 			}
+
+			if s.searchService != nil {
+				msgCopy := *msg
+				bodyCopy := *bodyEntity
+				go func() {
+					if err := s.searchService.IndexMessage(context.Background(), &msgCopy); err != nil {
+						log.WithError(err).WithField("message_id", msgCopy.ID).Warn("index message failed")
+					}
+					_ = s.searchService.IndexMessageBody(context.Background(), msgCopy.ID, bodyCopy.Body, bodyCopy.BodyHTML)
+				}()
+			}
 		}
 
 		nowSync := time.Now()
@@ -192,7 +210,45 @@ func (s *SyncService) SyncMailbox(ctx context.Context, mailboxID string) error {
 		log.WithError(err).Error("update sync job failed")
 	}
 
+	s.writeMetric(ctx, mb, syncStartedAt, time.Now(), messagesCount, syncErr != nil, syncErr)
+
 	return syncErr
+}
+
+func (s *SyncService) writeMetric(ctx context.Context, mb *entity.Mailbox, startedAt, finishedAt time.Time, count int, failed bool, syncErr error) {
+	if s.metricsService == nil {
+		return
+	}
+	status := "success"
+	errMsg := ""
+	if failed {
+		status = "failed"
+		if syncErr != nil {
+			errMsg = syncErr.Error()
+		}
+	}
+	metric := &entity.SyncMetric{
+		MailboxID:     mb.ID,
+		Provider:      mb.ProviderName,
+		Protocol:      mb.ProtocolName,
+		Status:        status,
+		MessagesCount: count,
+		DurationMs:    int(finishedAt.Sub(startedAt).Milliseconds()),
+		ErrorMsg:      errMsg,
+		StartedAt:     startedAt,
+		FinishedAt:    finishedAt,
+	}
+	if metric.Provider == "" {
+		metric.Provider = entity.IDToProvider[mb.ProviderID].String()
+	}
+	if metric.Protocol == "" {
+		metric.Protocol = entity.IDToProtocol[mb.ProtocolID].String()
+	}
+	go func() {
+		if err := s.metricsService.SaveSyncMetric(context.Background(), metric); err != nil {
+			log.WithError(err).WithField("mailbox_id", mb.ID).Warn("save sync metric failed")
+		}
+	}()
 }
 
 func (s *SyncService) refreshMailboxToken(ctx context.Context, mb *entity.Mailbox) error {

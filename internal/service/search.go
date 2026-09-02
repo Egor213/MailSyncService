@@ -2,17 +2,18 @@ package service
 
 import (
 	"context"
+	"mail-sync-service/internal/entity"
 	"mail-sync-service/internal/repo"
 	"mail-sync-service/internal/repo/elasticsearch"
 	"time"
 )
 
 type SearchService struct {
-	searchRepo *elasticsearch.SearchRepo
+	searchRepo repo.Search
 	msgRepo    repo.Message
 }
 
-func NewSearchService(searchRepo *elasticsearch.SearchRepo, msgRepo repo.Message) *SearchService {
+func NewSearchService(searchRepo repo.Search, msgRepo repo.Message) *SearchService {
 	return &SearchService{
 		searchRepo: searchRepo,
 		msgRepo:    msgRepo,
@@ -90,4 +91,12 @@ func (s *SearchService) Search(ctx context.Context, input SearchInput) ([]*Searc
 
 func (s *SearchService) GetMessageBody(ctx context.Context, messageID string) (string, string, error) {
 	return s.searchRepo.GetBody(ctx, messageID)
+}
+
+func (s *SearchService) IndexMessage(ctx context.Context, msg *entity.Message) error {
+	return s.searchRepo.IndexMessage(ctx, msg)
+}
+
+func (s *SearchService) IndexMessageBody(ctx context.Context, messageID, body, bodyHTML string) error {
+	return s.searchRepo.IndexMessageBody(ctx, messageID, body, bodyHTML)
 }

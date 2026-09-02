@@ -21,3 +21,10 @@ sync:
   interval: 5m
   retry_max: 3
   retry_backoff: 2s
+elasticsearch:
+  addresses: ["http://localhost:9200"]
+  username: ""
+  password: ""
+  index: "mail_sync"
+clickhouse:
+  address: "clickhouse://localhost:9000?username=default&password=&database=mail_sync"

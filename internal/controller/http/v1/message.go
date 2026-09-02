@@ -9,10 +9,10 @@ import (
 )
 
 type MessageHandler struct {
-	searchService *service.SearchService
+	searchService service.Search
 }
 
-func newMessageRoutes(g *echo.Group, searchService *service.SearchService) {
+func newMessageRoutes(g *echo.Group, searchService service.Search) {
 	h := &MessageHandler{searchService: searchService}
 	g.GET("/messages/:id/body", h.GetBody)
 }

@@ -12,7 +12,6 @@ import (
 type Consumer struct {
 	consumer sarama.ConsumerGroup
 	topic    string
-	handler  *syncHandler
 }
 
 type SyncHandler interface {
@@ -52,7 +51,6 @@ func (c *Consumer) Close() error {
 	return c.consumer.Close()
 }
 
-// syncGroupHandler реализует sarama.ConsumerGroupHandler
 type syncGroupHandler struct {
 	handler SyncHandler
 }

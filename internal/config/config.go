@@ -12,14 +12,16 @@ import (
 )
 
 type Config struct {
-	App   App   `yaml:"app"`
-	HTTP  HTTP  `yaml:"http"`
-	Log   Log   `yaml:"log"`
-	PG    PG    `yaml:"postgres"`
-	Redis Redis `yaml:"redis"`
-	Kafka Kafka `yaml:"kafka"`
-	OAuth OAuth `yaml:"oauth"`
-	Sync  Sync  `yaml:"sync"`
+	App        App        `yaml:"app"`
+	HTTP       HTTP       `yaml:"http"`
+	Log        Log        `yaml:"log"`
+	PG         PG         `yaml:"postgres"`
+	Redis      Redis      `yaml:"redis"`
+	Kafka      Kafka      `yaml:"kafka"`
+	OAuth      OAuth      `yaml:"oauth"`
+	Sync       Sync       `yaml:"sync"`
+	ES         ES         `yaml:"elasticsearch"`
+	ClickHouse ClickHouse `yaml:"clickhouse"`
 }
 
 type App struct {
@@ -68,6 +70,17 @@ type Sync struct {
 	Interval     time.Duration `yaml:"interval" env:"SYNC_INTERVAL" env-default:"5m"`
 	RetryMax     int           `yaml:"retry_max" env:"SYNC_RETRY_MAX" env-default:"3"`
 	RetryBackoff time.Duration `yaml:"retry_backoff" env:"SYNC_RETRY_BACKOFF" env-default:"2s"`
+}
+
+type ES struct {
+	Addresses []string `yaml:"addresses" env:"ES_ADDRESSES" env-separator:","`
+	Username  string   `yaml:"username" env:"ES_USERNAME"`
+	Password  string   `yaml:"password" env:"ES_PASSWORD"`
+	Index     string   `yaml:"index" env:"ES_INDEX" env-default:"mail_sync"`
+}
+
+type ClickHouse struct {
+	Address string `yaml:"address" env:"CH_ADDRESS"`
 }
 
 func New() (*Config, error) {

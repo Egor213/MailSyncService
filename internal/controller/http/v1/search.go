@@ -11,12 +11,12 @@ import (
 )
 
 type SearchHandler struct {
-	searchService *service.SearchService
+	searchService service.Search
 }
 
-func newSearchRoutes(g *echo.Group, searchService *service.SearchService) {
+func newSearchRoutes(g *echo.Group, searchService service.Search) {
 	h := &SearchHandler{searchService: searchService}
-	g.GET("/search", h.Search)
+	g.GET("", h.Search)
 }
 
 func (h *SearchHandler) Search(c echo.Context) error {

@@ -44,6 +44,8 @@ type OAuth interface {
 type Search interface {
 	Search(ctx context.Context, input SearchInput) ([]*SearchResultItem, int64, error)
 	GetMessageBody(ctx context.Context, messageID string) (string, string, error)
+	IndexMessage(ctx context.Context, msg *entity.Message) error
+	IndexMessageBody(ctx context.Context, messageID, body, bodyHTML string) error
 }
 
 type Metrics interface {
@@ -81,6 +83,13 @@ func NewServices(deps ServicesDependencies) *Services {
 		mailboxService,
 	)
 
+	searchService := NewSearchService(
+		deps.Repos.Search,
+		deps.Repos.Msg,
+	)
+
+	metricsService := NewMetricsService(deps.Repos.Metrics)
+
 	syncService := NewSyncService(
 		deps.Repos.Mb,
 		deps.Repos.Msg,
@@ -88,11 +97,15 @@ func NewServices(deps ServicesDependencies) *Services {
 		deps.Repos.Refs,
 		deps.Locker,
 		oauthService,
+		searchService,
+		metricsService,
 	)
 
 	return &Services{
 		Mailbox: mailboxService,
 		Sync:    syncService,
 		OAuth:   oauthService,
+		Search:  searchService,
+		Metrics: metricsService,
 	}
 }

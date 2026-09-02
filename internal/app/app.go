@@ -4,7 +4,9 @@ import (
 	"context"
 	"mail-sync-service/internal/config"
 	httpapi "mail-sync-service/internal/controller/http/v1"
+	"mail-sync-service/internal/infrastruct/kafka"
 	"mail-sync-service/internal/repo"
+	"mail-sync-service/internal/repo/redis"
 	"mail-sync-service/internal/service"
 	errutils "mail-sync-service/pkg/errors"
 	"mail-sync-service/pkg/httpserver"
@@ -15,6 +17,10 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	clicksvc "mail-sync-service/pkg/clickhouse"
+	elasticpkg "mail-sync-service/pkg/elastic"
+	redispkg "mail-sync-service/pkg/redis"
 
 	trmpgx "github.com/avito-tech/go-transaction-manager/drivers/pgxv5/v2"
 	"github.com/avito-tech/go-transaction-manager/trm/v2/manager"
@@ -37,36 +43,12 @@ func Run() {
 	// Migrations
 	Migrate(cfg.PG.URL)
 
-	// Redis
-	// redisClient, err := redispkg.New(cfg.Redis.Address, cfg.Redis.Password, cfg.Redis.DB)
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-	// defer redisClient.Close()
-
-	// Kafka Producer
-	// producer, err := kafka.NewProducer(cfg.Kafka.Brokers, cfg.Kafka.Topic)
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-	// defer producer.Close()
-
-	// PostgreSQL – раскомментируем
+	// PostgreSQL
 	pg, err := postgres.New(cfg.PG.URL, postgres.MaxPoolSize(cfg.PG.MaxPoolSize))
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer pg.Close()
-
-	// Redis
-	// redisClient, err := redispkg.New(cfg.Redis.Address, cfg.Redis.Password, cfg.Redis.DB)
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-	// defer redisClient.Close()
-
-	// Repos
-	repositories := repo.NewRepositories(pg)
 
 	// Transaction manager
 	trManager := manager.Must(trmpgx.NewDefaultFactory(pg.Pool))
@@ -87,35 +69,36 @@ func Run() {
 	defer producer.Close()
 
 	// Elasticsearch
-	esClient, err := elastic.NewClient(cfg.ES.Address, cfg.ES.Username, cfg.ES.Password)
+	esClient, err := elasticpkg.NewClient(cfg.ES.Addresses, cfg.ES.Username, cfg.ES.Password)
 	if err != nil {
 		log.Fatal(err)
 	}
-	searchRepo := elasticsearch.NewSearchRepo(esClient, cfg.ES.Index)
 
 	// ClickHouse
-	chClient, err := clickhouse.NewClient(cfg.ClickHouse.Address)
+	chClient, err := clicksvc.NewClient(cfg.ClickHouse.Address)
 	if err != nil {
 		log.Fatal(err)
 	}
-	metricsRepo := clickhouse.NewMetricsRepo(chClient)
+	defer chClient.Close()
 
-	// Обновляем зависимости
+	// Repos
+	repositories := repo.NewRepositories(pg, esClient, cfg.ES.Index, chClient)
+
+	// Services
 	deps := service.ServicesDependencies{
 		Repos:         repositories,
 		Locker:        locker,
 		KafkaProducer: producer,
-		SearchRepo:    searchRepo,
-		MetricsRepo:   metricsRepo,
 		Config:        cfg,
 		HTTPClient:    &http.Client{Timeout: 10 * time.Second},
 		TrManager:     trManager,
 	}
 	services := service.NewServices(deps)
 
-	// HTTP роутер (добавляем новые маршруты)
+	// HTTP роутер
 	e := echo.New()
 	httpapi.ConfigureRouter(e, services)
+	httpServer := httpserver.New(e, httpserver.Address(cfg.HTTP.Address))
 
 	// Запуск Kafka Consumer (воркера)
 	consumer, err := kafka.NewConsumer(cfg.Kafka.Brokers, cfg.Kafka.ConsumerGroup, cfg.Kafka.Topic)
@@ -124,13 +107,6 @@ func Run() {
 	}
 	defer consumer.Close()
 
-	// Создаём адаптер для syncService
-	type syncHandlerAdapter struct {
-		syncService *service.SyncService
-	}
-	func (a *syncHandlerAdapter) HandleSync(ctx context.Context, mailboxID string) error {
-		return a.syncService.SyncMailbox(ctx, mailboxID)
-	}
 	handler := &syncHandlerAdapter{syncService: services.Sync.(*service.SyncService)}
 	go func() {
 		if err := consumer.Run(context.Background(), handler); err != nil {
@@ -138,8 +114,7 @@ func Run() {
 		}
 	}()
 
-
-	// Cron – периодическая синхронизация всех активных ящиков
+	// Cron
 	cronScheduler := cron.New(cron.WithChain(cron.Recover(cron.DefaultLogger)))
 	_, err = cronScheduler.AddFunc("@every "+cfg.Sync.Interval.String(), func() {
 		ctx := context.Background()
@@ -164,4 +139,12 @@ func Run() {
 		log.Error(err)
 	}
 	_ = httpServer.Shutdown()
+}
+
+type syncHandlerAdapter struct {
+	syncService *service.SyncService
+}
+
+func (a *syncHandlerAdapter) HandleSync(ctx context.Context, mailboxID string) error {
+	return a.syncService.SyncMailbox(ctx, mailboxID)
 }
