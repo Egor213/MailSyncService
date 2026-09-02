@@ -71,29 +71,73 @@ func Run() {
 	// Transaction manager
 	trManager := manager.Must(trmpgx.NewDefaultFactory(pg.Pool))
 
-	// Services
+	// Redis
+	redisClient, err := redispkg.New(cfg.Redis.Address, cfg.Redis.Password, cfg.Redis.DB)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer redisClient.Close()
+	locker := redis.NewRedisLocker(redisClient)
+
+	// Kafka Producer
+	producer, err := kafka.NewProducer(cfg.Kafka.Brokers, cfg.Kafka.Topic)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer producer.Close()
+
+	// Elasticsearch
+	esClient, err := elastic.NewClient(cfg.ES.Address, cfg.ES.Username, cfg.ES.Password)
+	if err != nil {
+		log.Fatal(err)
+	}
+	searchRepo := elasticsearch.NewSearchRepo(esClient, cfg.ES.Index)
+
+	// ClickHouse
+	chClient, err := clickhouse.NewClient(cfg.ClickHouse.Address)
+	if err != nil {
+		log.Fatal(err)
+	}
+	metricsRepo := clickhouse.NewMetricsRepo(chClient)
+
+	// Обновляем зависимости
 	deps := service.ServicesDependencies{
-		Repos:      repositories,
-		TrManager:  trManager,
-		HTTPClient: &http.Client{Timeout: 10 * time.Second},
-		Config:     cfg,
+		Repos:         repositories,
+		Locker:        locker,
+		KafkaProducer: producer,
+		SearchRepo:    searchRepo,
+		MetricsRepo:   metricsRepo,
+		Config:        cfg,
+		HTTPClient:    &http.Client{Timeout: 10 * time.Second},
+		TrManager:     trManager,
 	}
 	services := service.NewServices(deps)
 
-	// HTTP
+	// HTTP роутер (добавляем новые маршруты)
 	e := echo.New()
 	httpapi.ConfigureRouter(e, services)
 
-	httpServer := httpserver.New(e, httpserver.Address(cfg.HTTP.Address))
+	// Запуск Kafka Consumer (воркера)
+	consumer, err := kafka.NewConsumer(cfg.Kafka.Brokers, cfg.Kafka.ConsumerGroup, cfg.Kafka.Topic)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer consumer.Close()
 
-	// Kafka Consumer (воркер)
-	// consumer, err := kafka.NewConsumer(cfg.Kafka.Brokers, cfg.Kafka.ConsumerGroup, cfg.Kafka.Topic)
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-	// defer consumer.Close()
-	// syncWorker := worker.NewSyncWorker(consumer, syncService, cfg.Kafka.Topic)
-	// go syncWorker.Run(context.Background())
+	// Создаём адаптер для syncService
+	type syncHandlerAdapter struct {
+		syncService *service.SyncService
+	}
+	func (a *syncHandlerAdapter) HandleSync(ctx context.Context, mailboxID string) error {
+		return a.syncService.SyncMailbox(ctx, mailboxID)
+	}
+	handler := &syncHandlerAdapter{syncService: services.Sync.(*service.SyncService)}
+	go func() {
+		if err := consumer.Run(context.Background(), handler); err != nil {
+			log.WithError(err).Error("kafka consumer stopped")
+		}
+	}()
+
 
 	// Cron – периодическая синхронизация всех активных ящиков
 	cronScheduler := cron.New(cron.WithChain(cron.Recover(cron.DefaultLogger)))

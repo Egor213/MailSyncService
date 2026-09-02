@@ -3,11 +3,13 @@ package service
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"mail-sync-service/internal/config"
 	"mail-sync-service/internal/entity"
 	"mail-sync-service/internal/infrastruct/kafka"
 	"mail-sync-service/internal/repo"
+	"mail-sync-service/internal/repo/clickhouse"
 	"mail-sync-service/internal/repo/redis"
 
 	"github.com/avito-tech/go-transaction-manager/trm/v2"
@@ -39,21 +41,31 @@ type OAuth interface {
 	RefreshToken(ctx context.Context, provider string, refreshToken string) (*tokenResponse, error)
 }
 
+type Search interface {
+	Search(ctx context.Context, input SearchInput) ([]*SearchResultItem, int64, error)
+	GetMessageBody(ctx context.Context, messageID string) (string, string, error)
+}
+
+type Metrics interface {
+	SaveSyncMetric(ctx context.Context, metric *entity.SyncMetric) error
+	GetOverviewStats(ctx context.Context, since time.Time) (*clickhouse.AggregatedStats, error)
+}
+
 type Services struct {
 	Mailbox Mailbox
 	Sync    Sync
 	OAuth   OAuth
+	Search  Search
+	Metrics Metrics
 }
 
 type ServicesDependencies struct {
-	Repos  *repo.Repositories
-	Locker redis.Locker
-
+	Repos         *repo.Repositories
+	Locker        redis.Locker
 	KafkaProducer kafka.KafkaProducer
-
-	Config     *config.Config
-	HTTPClient *http.Client
-	TrManager  TRManager
+	Config        *config.Config
+	HTTPClient    *http.Client
+	TrManager     TRManager
 }
 
 func NewServices(deps ServicesDependencies) *Services {
