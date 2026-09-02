@@ -35,7 +35,7 @@ func ConfigureRouter(handler *echo.Echo, services *service.Services) {
 	// Можно добавить middleware для аутентификации, пока пусто
 	// authMW := mw.NewAuth(services.Auth)
 
-	// newMailboxRoutes(api.Group("/mailboxes"), services.Mailbox)
+	newMailboxRoutes(api.Group("/mailboxes"), services.Mailbox, services.Sync)
 	// newSyncRoutes(api.Group("/sync"), services.Sync)
 }
 

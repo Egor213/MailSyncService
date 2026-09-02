@@ -12,17 +12,38 @@ import (
 
 type MailboxHandler struct {
 	mailboxService service.Mailbox
-	syncService    service.SyncService
+	syncService    service.Sync
 }
 
-func newMailboxRoutes(g *echo.Group, mailboxService *service.MailboxService) {
-	h := &MailboxHandler{mailboxService: mailboxService}
+func newMailboxRoutes(g *echo.Group, mailboxService service.Mailbox, syncService service.Sync) {
+	h := &MailboxHandler{mailboxService: mailboxService, syncService: syncService}
 
-	// g.POST("", h.Create)               // POST /api/v1/mailboxes
-	// g.GET("/:id", h.Get)               // GET /api/v1/mailboxes/:id
-	// g.PUT("/:id", h.Update)            // PUT /api/v1/mailboxes/:id
-	// g.DELETE("/:id", h.Delete)         // DELETE /api/v1/mailboxes/:id
+	g.POST("", h.Create)               // POST /api/v1/mailboxes
 	g.POST("/:id/sync", h.TriggerSync) // POST /api/v1/mailboxes/:id/sync
+}
+
+func (h *MailboxHandler) Create(c echo.Context) error {
+	var req httpdto.CreateMailboxRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, httpdto.ErrorOutput{Message: "invalid request"})
+	}
+
+	mb, err := h.mailboxService.CreateMailbox(c.Request().Context(), service.CreateMailboxInput{
+		Email:        req.Email,
+		Provider:     req.Provider,
+		Protocol:     req.Protocol,
+		Server:       req.Server,
+		Port:         req.Port,
+		UseTLS:       req.UseTLS,
+		AuthType:     req.AuthType,
+		AccessToken:  req.AccessToken,
+		RefreshToken: req.RefreshToken,
+		TokenExpiry:  req.TokenExpiry,
+	})
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, httpdto.ErrorOutput{Message: err.Error()})
+	}
+	return c.JSON(http.StatusCreated, httpdto.MailboxResponse{ID: mb.ID})
 }
 
 func (h *MailboxHandler) TriggerSync(c echo.Context) error {
@@ -38,26 +59,3 @@ func (h *MailboxHandler) TriggerSync(c echo.Context) error {
 	}
 	return c.NoContent(http.StatusAccepted)
 }
-
-// func (h *MailboxHandler) Create(c echo.Context) error {
-// 	var req dto.CreateMailboxRequest
-// 	if err := c.Bind(&req); err != nil {
-// 		return c.JSON(http.StatusBadRequest, dto.ErrorResponse{Message: "invalid request"})
-// 	}
-// 	if err := c.Validate(req); err != nil {
-// 		return c.JSON(http.StatusBadRequest, dto.ErrorResponse{Message: err.Error()})
-// 	}
-// 	mb := req.ToEntity()
-// 	if err := h.mailboxService.CreateMailbox(c.Request().Context(), mb); err != nil {
-// 		return c.JSON(http.StatusInternalServerError, dto.ErrorResponse{Message: err.Error()})
-// 	}
-// 	return c.JSON(http.StatusCreated, dto.MailboxResponse{ID: mb.ID})
-// }
-
-// func (h *MailboxHandler) Sync(c echo.Context) error {
-// 	id := c.Param("id")
-// 	if err := h.mailboxService.TriggerSync(c.Request().Context(), id); err != nil {
-// 		return c.JSON(http.StatusInternalServerError, dto.ErrorResponse{Message: err.Error()})
-// 	}
-// 	return c.NoContent(http.StatusAccepted)
-// }

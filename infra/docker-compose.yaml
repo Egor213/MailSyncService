@@ -48,16 +48,42 @@ services:
     networks:
       - net
 
-  elasticvue:
-    image: cars10/elasticvue:latest
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
     environment:
-      - ELASTICSEARCH_URL=http://localhost:9200
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
     ports:
-      - "3000:8080"
+      - "2181:2181"
     restart: unless-stopped
-    container_name: elasticvue
+    container_name: zookeeper
+    networks:
+      - net
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
     depends_on:
-      - elasticsearch
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+    ports:
+      - "9092:9092"
+    restart: unless-stopped
+    container_name: kafka
+    networks:
+      - net
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    container_name: redis
     networks:
       - net
 

@@ -1,0 +1,32 @@
+name: tools
+
+services:
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: host.docker.internal:9092
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    container_name: kafka-ui
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  elasticvue:
+    image: cars10/elasticvue:latest
+    environment:
+      ELASTICSEARCH_URL: http://host.docker.internal:9200
+    ports:
+      - "3000:8080"
+    restart: unless-stopped
+    container_name: elasticvue
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  redis-insight:
+    image: redis/redisinsight:latest
+    ports:
+      - "5540:5540"
+    restart: unless-stopped
+    container_name: redis-insight
