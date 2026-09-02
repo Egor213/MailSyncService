@@ -14,11 +14,62 @@ services:
     networks:
       - net
 
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    environment:
+      - CLICKHOUSE_DB=app
+      - CLICKHOUSE_USER=admin
+      - CLICKHOUSE_PASSWORD=
+    volumes:
+      - ch-data:/var/lib/clickhouse
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    restart: unless-stopped
+    container_name: clickhouse
+    networks:
+      - net
+
+  elasticsearch:
+    image: elasticsearch:9.5.2
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g
+      - http.cors.enabled=true
+      - http.cors.allow-origin=http://localhost:3000
+      - http.cors.allow-headers=X-Requested-With,Content-Type,Content-Length,Authorization
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    restart: unless-stopped
+    container_name: elasticsearch
+    networks:
+      - net
+
+  elasticvue:
+    image: cars10/elasticvue:latest
+    environment:
+      - ELASTICSEARCH_URL=http://localhost:9200
+    ports:
+      - "3000:8080"
+    restart: unless-stopped
+    container_name: elasticvue
+    depends_on:
+      - elasticsearch
+    networks:
+      - net
 
 volumes:
   pg-data:
+    driver: local
+  ch-data:
+    driver: local
+  es-data:
     driver: local
 
 networks:
   net:
     driver: bridge
+
