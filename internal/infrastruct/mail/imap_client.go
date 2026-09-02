@@ -11,6 +11,8 @@ import (
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
+	"github.com/emersion/go-sasl"
+	"github.com/labstack/gommon/log"
 )
 
 type IMAPClient struct {
@@ -50,20 +52,31 @@ func (c *IMAPClient) Authenticate(ctx context.Context, mailbox *entity.Mailbox) 
 		return fmt.Errorf("client not connected")
 	}
 
-	if mailbox.AuthTypeID == entity.AuthTypeToID[entity.AuthTypeOAuth2] {
+	switch mailbox.AuthTypeID {
+	case entity.AuthTypeToID[entity.AuthTypeOAuth2]:
 		authString := c.buildXOAUTH2String(mailbox.Email, mailbox.AccessToken)
 		saslClient := &xoauth2Client{authString: authString}
+		log.Info(saslClient)
 		if err := c.client.Authenticate(saslClient); err != nil {
 			return fmt.Errorf("oauth2 auth failed: %w", err)
 		}
-	} else {
-		return fmt.Errorf("plain auth not implemented yet")
+	case entity.AuthTypeToID[entity.AuthTypePlain]:
+		if err := saslAuthenticate(c.client, mailbox.Email, mailbox.AccessToken); err != nil {
+			return fmt.Errorf("plain auth failed: %w", err)
+		}
+	default:
+		return fmt.Errorf("unknown auth type id: %d", mailbox.AuthTypeID)
 	}
 	return nil
 }
 
+func saslAuthenticate(client *imapclient.Client, username, password string) error {
+	return client.Authenticate(sasl.NewPlainClient("", username, password))
+}
+
 func (c *IMAPClient) buildXOAUTH2String(email, accessToken string) string {
-	authStr := fmt.Sprintf("user=%s\x01auth=Bearer %s\x01\x01", email, accessToken)
+	authStr := fmt.Sprintf("user=%s\001auth=Bearer %s\001\001", email, accessToken)
+	log.Info(authStr)
 	return base64.StdEncoding.EncodeToString([]byte(authStr))
 }
 
@@ -77,7 +90,8 @@ func (x *xoauth2Client) Start() (mech string, initial []byte, err error) {
 
 func (x *xoauth2Client) Next(challenge []byte) ([]byte, error) {
 	if len(challenge) > 0 {
-		return []byte{}, nil
+		// Сервер вернул ошибку (обычно в base64). Прерываем аутентификацию корректно.
+		return nil, fmt.Errorf("IMAP server rejected XOAUTH2: %s", string(challenge))
 	}
 	return nil, nil
 }

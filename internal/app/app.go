@@ -10,7 +10,6 @@ import (
 	"mail-sync-service/pkg/httpserver"
 	"mail-sync-service/pkg/logger"
 	"mail-sync-service/pkg/postgres"
-	redispkg "mail-sync-service/pkg/redis"
 	"net/http"
 	"os"
 	"os/signal"
@@ -60,11 +59,11 @@ func Run() {
 	defer pg.Close()
 
 	// Redis
-	redisClient, err := redispkg.New(cfg.Redis.Address, cfg.Redis.Password, cfg.Redis.DB)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer redisClient.Close()
+	// redisClient, err := redispkg.New(cfg.Redis.Address, cfg.Redis.Password, cfg.Redis.DB)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+	// defer redisClient.Close()
 
 	// Repos
 	repositories := repo.NewRepositories(pg)

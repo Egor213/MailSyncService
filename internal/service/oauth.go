@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/labstack/gommon/log"
 	"golang.org/x/oauth2/google"
 	"golang.org/x/oauth2/mailru"
 	"golang.org/x/oauth2/microsoft"
@@ -82,7 +83,7 @@ func (s *OAuthService) getProviderConfig(provider string) (*providerConfig, erro
 			AuthURL:      yandex.Endpoint.AuthURL,
 			TokenURL:     yandex.Endpoint.TokenURL,
 			RedirectURI:  s.config.RedirectURI,
-			Scopes:       []string{},
+			Scopes:       []string{"mail:imap_full", "mail:imap_ro", "login:email"},
 		}, nil
 	default:
 		return nil, errors.New("unsupported provider: " + provider)
@@ -197,6 +198,7 @@ func (s *OAuthService) exchangeCode(ctx context.Context, cfg *providerConfig, co
 	if err := json.Unmarshal(body, &token); err != nil {
 		return nil, fmt.Errorf("decode token response: %w", err)
 	}
+	log.Info(token)
 	return &token, nil
 }
 
