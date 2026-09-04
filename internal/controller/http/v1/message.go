@@ -1,7 +1,9 @@
 package httpapi
 
 import (
+	"errors"
 	httpdto "mail-sync-service/internal/controller/http/v1/dto"
+	repoerrs "mail-sync-service/internal/repo/errors"
 	"mail-sync-service/internal/service"
 	"net/http"
 
@@ -20,6 +22,14 @@ func newMessageRoutes(g *echo.Group, searchService service.Search) {
 func (h *MessageHandler) GetBody(c echo.Context) error {
 	id := c.Param("id")
 	ctx := c.Request().Context()
+
+	if _, err := h.searchService.GetMessageByID(ctx, id); err != nil {
+		if errors.Is(err, repoerrs.ErrNotFound) {
+			return c.JSON(http.StatusNotFound, httpdto.ErrorOutput{Message: "message not found"})
+		}
+		return c.JSON(http.StatusInternalServerError, httpdto.ErrorOutput{Message: err.Error()})
+	}
+
 	body, bodyHTML, err := h.searchService.GetMessageBody(ctx, id)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, httpdto.ErrorOutput{Message: err.Error()})

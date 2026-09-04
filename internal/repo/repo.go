@@ -24,6 +24,7 @@ type Mailbox interface {
 
 type Message interface {
 	Upsert(ctx context.Context, msg *entity.Message) error
+	GetByID(ctx context.Context, id string) (*entity.Message, error)
 	GetByUID(ctx context.Context, mailboxID, uid, folder string) (*entity.Message, error)
 	GetLastUID(ctx context.Context, mailboxID, folder string) (string, error)
 	MarkSeen(ctx context.Context, id string) error
@@ -66,11 +67,11 @@ type Repositories struct {
 	Metrics Metrics
 }
 
-func NewRepositories(pg *postgres.Postgres, es *elaspkg.Client, esIndex string, ch *clicksvc.Client) *Repositories {
+func NewRepositories(pg *postgres.Postgres, es *elaspkg.Client, esIndex string, ch *clicksvc.Client, encKey []byte) *Repositories {
 	return &Repositories{
 		Msg:     pgdb.NewMessageRepo(pg),
 		Sj:      pgdb.NewSyncJobRepo(pg),
-		Mb:      pgdb.NewMailboxRepo(pg),
+		Mb:      pgdb.NewMailboxRepo(pg, encKey),
 		Refs:    pgdb.NewReferenceRepo(pg),
 		Search:  elasticsearch.NewSearchRepo(es, esIndex),
 		Metrics: clickhouse.NewMetricsRepo(ch),

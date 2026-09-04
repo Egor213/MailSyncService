@@ -211,6 +211,8 @@ func (s *OAuthService) getUserEmail(ctx context.Context, provider, accessToken s
 		userInfoURL = "https://graph.microsoft.com/v1.0/me"
 	case "yandex":
 		userInfoURL = "https://login.yandex.ru/info?format=json"
+	case "mailru":
+		userInfoURL = "https://oauth.mail.ru/userinfo"
 	default:
 		return "", errors.New("unsupported provider for userinfo")
 	}
@@ -258,6 +260,8 @@ func (s *OAuthService) getServer(provider string) string {
 		return "outlook.office365.com"
 	case "yandex":
 		return "imap.yandex.ru"
+	case "mailru":
+		return "imap.mail.ru"
 	default:
 		return ""
 	}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"mail-sync-service/internal/entity"
 	repoerrs "mail-sync-service/internal/repo/errors"
+	"mail-sync-service/pkg/crypto"
 	"mail-sync-service/pkg/postgres"
 
 	"github.com/jackc/pgx/v5"
@@ -12,21 +13,30 @@ import (
 
 type MailboxRepo struct {
 	*postgres.Postgres
+	encKey []byte
 }
 
-func NewMailboxRepo(pg *postgres.Postgres) *MailboxRepo {
-	return &MailboxRepo{pg}
+func NewMailboxRepo(pg *postgres.Postgres, encKey []byte) *MailboxRepo {
+	return &MailboxRepo{Postgres: pg, encKey: encKey}
 }
 
 func (r *MailboxRepo) Create(ctx context.Context, mb *entity.Mailbox) error {
+	at, err := r.maybeEncrypt(mb.AccessToken)
+	if err != nil {
+		return err
+	}
+	rt, err := r.maybeEncrypt(mb.RefreshToken)
+	if err != nil {
+		return err
+	}
 	sql, args, _ := r.Builder.
 		Insert("mail_sync.mailboxes").
 		Columns("id", "email", "provider_id", "protocol_id", "server", "port",
 			"use_tls", "auth_type_id", "access_token", "refresh_token", "token_expiry", "is_active").
 		Values(mb.ID, mb.Email, mb.ProviderID, mb.ProtocolID, mb.Server, mb.Port,
-			mb.UseTLS, mb.AuthTypeID, mb.AccessToken, mb.RefreshToken, mb.TokenExpiry, mb.IsActive).
+			mb.UseTLS, mb.AuthTypeID, at, rt, mb.TokenExpiry, mb.IsActive).
 		ToSql()
-	_, err := r.CtxGetter.DefaultTrOrDB(ctx, r.Pool).Exec(ctx, sql, args...)
+	_, err = r.CtxGetter.DefaultTrOrDB(ctx, r.Pool).Exec(ctx, sql, args...)
 	return err
 }
 
@@ -50,7 +60,12 @@ func (r *MailboxRepo) GetByID(ctx context.Context, id string) (*entity.Mailbox, 
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, repoerrs.ErrNotFound
 	}
-	return &mb, err
+	if err != nil {
+		return nil, err
+	}
+	mb.AccessToken, _ = r.maybeDecrypt(mb.AccessToken)
+	mb.RefreshToken, _ = r.maybeDecrypt(mb.RefreshToken)
+	return &mb, nil
 }
 
 func (r *MailboxRepo) GetByEmail(ctx context.Context, email string) (*entity.Mailbox, error) {
@@ -73,10 +88,23 @@ func (r *MailboxRepo) GetByEmail(ctx context.Context, email string) (*entity.Mai
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, repoerrs.ErrNotFound
 	}
-	return &mb, err
+	if err != nil {
+		return nil, err
+	}
+	mb.AccessToken, _ = r.maybeDecrypt(mb.AccessToken)
+	mb.RefreshToken, _ = r.maybeDecrypt(mb.RefreshToken)
+	return &mb, nil
 }
 
 func (r *MailboxRepo) Update(ctx context.Context, mb *entity.Mailbox) error {
+	at, err := r.maybeEncrypt(mb.AccessToken)
+	if err != nil {
+		return err
+	}
+	rt, err := r.maybeEncrypt(mb.RefreshToken)
+	if err != nil {
+		return err
+	}
 	sql, args, _ := r.Builder.
 		Update("mail_sync.mailboxes").
 		Set("email", mb.Email).
@@ -86,15 +114,15 @@ func (r *MailboxRepo) Update(ctx context.Context, mb *entity.Mailbox) error {
 		Set("port", mb.Port).
 		Set("use_tls", mb.UseTLS).
 		Set("auth_type_id", mb.AuthTypeID).
-		Set("access_token", mb.AccessToken).
-		Set("refresh_token", mb.RefreshToken).
+		Set("access_token", at).
+		Set("refresh_token", rt).
 		Set("token_expiry", mb.TokenExpiry).
 		Set("is_active", mb.IsActive).
 		Set("updated_at", "NOW()").
 		Where("id = ?", mb.ID).
 		ToSql()
 
-	_, err := r.CtxGetter.DefaultTrOrDB(ctx, r.Pool).Exec(ctx, sql, args...)
+	_, err = r.CtxGetter.DefaultTrOrDB(ctx, r.Pool).Exec(ctx, sql, args...)
 	return err
 }
 
@@ -135,7 +163,23 @@ func (r *MailboxRepo) ListActive(ctx context.Context) ([]*entity.Mailbox, error)
 		if err != nil {
 			return nil, err
 		}
+		mb.AccessToken, _ = r.maybeDecrypt(mb.AccessToken)
+		mb.RefreshToken, _ = r.maybeDecrypt(mb.RefreshToken)
 		mailboxes = append(mailboxes, &mb)
 	}
 	return mailboxes, rows.Err()
+}
+
+func (r *MailboxRepo) maybeEncrypt(val string) (string, error) {
+	if len(r.encKey) == 0 || val == "" {
+		return val, nil
+	}
+	return crypto.Encrypt(val, r.encKey)
+}
+
+func (r *MailboxRepo) maybeDecrypt(val string) (string, error) {
+	if len(r.encKey) == 0 || val == "" {
+		return val, nil
+	}
+	return crypto.Decrypt(val, r.encKey)
 }

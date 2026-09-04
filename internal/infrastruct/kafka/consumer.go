@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 
 	"github.com/IBM/sarama"
 	log "github.com/sirupsen/logrus"
@@ -12,6 +13,8 @@ import (
 type Consumer struct {
 	consumer sarama.ConsumerGroup
 	topic    string
+	cancel   context.CancelFunc
+	wg       sync.WaitGroup
 }
 
 type SyncHandler interface {
@@ -35,16 +38,29 @@ func NewConsumer(brokers []string, groupID, topic string) (*Consumer, error) {
 }
 
 func (c *Consumer) Run(ctx context.Context, handler SyncHandler) error {
+	ctx, cancel := context.WithCancel(ctx)
+	c.cancel = cancel
 	h := &syncGroupHandler{handler: handler}
-	for {
-		if err := c.consumer.Consume(ctx, []string{c.topic}, h); err != nil {
-			log.Errorf("consumer error: %v", err)
-			return err
+	c.wg.Add(1)
+	go func() {
+		defer c.wg.Done()
+		for {
+			if err := c.consumer.Consume(ctx, []string{c.topic}, h); err != nil {
+				log.Errorf("consumer error: %v", err)
+			}
+			if ctx.Err() != nil {
+				return
+			}
 		}
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
+	}()
+	return nil
+}
+
+func (c *Consumer) Stop() {
+	if c.cancel != nil {
+		c.cancel()
 	}
+	c.wg.Wait()
 }
 
 func (c *Consumer) Close() error {

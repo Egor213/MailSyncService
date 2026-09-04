@@ -93,6 +93,10 @@ func (s *SearchService) GetMessageBody(ctx context.Context, messageID string) (s
 	return s.searchRepo.GetBody(ctx, messageID)
 }
 
+func (s *SearchService) GetMessageByID(ctx context.Context, messageID string) (*entity.Message, error) {
+	return s.msgRepo.GetByID(ctx, messageID)
+}
+
 func (s *SearchService) IndexMessage(ctx context.Context, msg *entity.Message) error {
 	return s.searchRepo.IndexMessage(ctx, msg)
 }

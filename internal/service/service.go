@@ -44,6 +44,7 @@ type OAuth interface {
 type Search interface {
 	Search(ctx context.Context, input SearchInput) ([]*SearchResultItem, int64, error)
 	GetMessageBody(ctx context.Context, messageID string) (string, string, error)
+	GetMessageByID(ctx context.Context, messageID string) (*entity.Message, error)
 	IndexMessage(ctx context.Context, msg *entity.Message) error
 	IndexMessageBody(ctx context.Context, messageID, body, bodyHTML string) error
 }
@@ -99,6 +100,8 @@ func NewServices(deps ServicesDependencies) *Services {
 		oauthService,
 		searchService,
 		metricsService,
+		deps.Config.Sync.RetryMax,
+		deps.Config.Sync.RetryBackoff,
 	)
 
 	return &Services{

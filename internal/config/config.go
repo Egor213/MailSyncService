@@ -22,6 +22,7 @@ type Config struct {
 	Sync       Sync       `yaml:"sync"`
 	ES         ES         `yaml:"elasticsearch"`
 	ClickHouse ClickHouse `yaml:"clickhouse"`
+	Security   Security   `yaml:"security"`
 }
 
 type App struct {
@@ -70,6 +71,10 @@ type Sync struct {
 	Interval     time.Duration `yaml:"interval" env:"SYNC_INTERVAL" env-default:"5m"`
 	RetryMax     int           `yaml:"retry_max" env:"SYNC_RETRY_MAX" env-default:"3"`
 	RetryBackoff time.Duration `yaml:"retry_backoff" env:"SYNC_RETRY_BACKOFF" env-default:"2s"`
+}
+
+type Security struct {
+	EncryptionKey string `env:"ENCRYPTION_KEY" env-required:"true"`
 }
 
 type ES struct {

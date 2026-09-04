@@ -17,6 +17,11 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+var (
+	ErrMailboxInactive = errors.New("mailbox is inactive")
+	ErrAlreadySyncing  = errors.New("mailbox already syncing")
+)
+
 type SyncService struct {
 	mailboxRepo    repo.Mailbox
 	msgRepo        repo.Message
@@ -26,6 +31,8 @@ type SyncService struct {
 	oauthService   OAuth
 	searchService  Search
 	metricsService Metrics
+	retryMax       int
+	retryBackoff   time.Duration
 }
 
 func NewSyncService(
@@ -37,6 +44,8 @@ func NewSyncService(
 	oauthService OAuth,
 	searchService Search,
 	metricsService Metrics,
+	retryMax int,
+	retryBackoff time.Duration,
 ) *SyncService {
 	return &SyncService{
 		mailboxRepo:    mailRepo,
@@ -47,6 +56,8 @@ func NewSyncService(
 		oauthService:   oauthService,
 		searchService:  searchService,
 		metricsService: metricsService,
+		retryMax:       retryMax,
+		retryBackoff:   retryBackoff,
 	}
 }
 
@@ -66,6 +77,29 @@ func (s *SyncService) SyncAllActive(ctx context.Context) error {
 }
 
 func (s *SyncService) SyncMailbox(ctx context.Context, mailboxID string) error {
+	var lastErr error
+	for attempt := 0; attempt <= s.retryMax; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(s.retryBackoff * time.Duration(attempt)):
+			}
+			log.WithField("attempt", attempt).WithField("mailbox_id", mailboxID).Info("retrying sync")
+		}
+		err := s.syncMailboxInternal(ctx, mailboxID)
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		if errors.Is(err, ErrMailboxInactive) || errors.Is(err, ErrAlreadySyncing) {
+			return err
+		}
+	}
+	return fmt.Errorf("sync failed after %d attempts: %w", s.retryMax, lastErr)
+}
+
+func (s *SyncService) syncMailboxInternal(ctx context.Context, mailboxID string) error {
 	if s.locker != nil {
 		lockKey := "sync:" + mailboxID
 		locked, err := s.locker.Lock(ctx, lockKey, 10*time.Minute)
@@ -73,7 +107,7 @@ func (s *SyncService) SyncMailbox(ctx context.Context, mailboxID string) error {
 			return fmt.Errorf("lock error: %w", err)
 		}
 		if !locked {
-			return errors.New("mailbox already syncing")
+			return ErrAlreadySyncing
 		}
 		defer s.locker.Unlock(ctx, lockKey)
 	}
@@ -83,7 +117,7 @@ func (s *SyncService) SyncMailbox(ctx context.Context, mailboxID string) error {
 		return fmt.Errorf("get mailbox: %w", err)
 	}
 	if !mb.IsActive {
-		return errors.New("mailbox is inactive")
+		return ErrMailboxInactive
 	}
 
 	if mb.TokenExpiry != nil && mb.TokenExpiry.Before(time.Now()) {
@@ -182,7 +216,9 @@ func (s *SyncService) SyncMailbox(ctx context.Context, mailboxID string) error {
 					if err := s.searchService.IndexMessage(context.Background(), &msgCopy); err != nil {
 						log.WithError(err).WithField("message_id", msgCopy.ID).Warn("index message failed")
 					}
-					_ = s.searchService.IndexMessageBody(context.Background(), msgCopy.ID, bodyCopy.Body, bodyCopy.BodyHTML)
+					if err := s.searchService.IndexMessageBody(context.Background(), msgCopy.ID, bodyCopy.Body, bodyCopy.BodyHTML); err != nil {
+						log.WithError(err).WithField("message_id", msgCopy.ID).Warn("index message body failed")
+					}
 				}()
 			}
 		}

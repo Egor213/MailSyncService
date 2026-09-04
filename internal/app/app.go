@@ -82,7 +82,7 @@ func Run() {
 	defer chClient.Close()
 
 	// Repos
-	repositories := repo.NewRepositories(pg, esClient, cfg.ES.Index, chClient)
+	repositories := repo.NewRepositories(pg, esClient, cfg.ES.Index, chClient, []byte(cfg.Security.EncryptionKey))
 
 	// Services
 	deps := service.ServicesDependencies{
@@ -139,6 +139,7 @@ func Run() {
 		log.Error(err)
 	}
 	_ = httpServer.Shutdown()
+	consumer.Stop()
 }
 
 type syncHandlerAdapter struct {

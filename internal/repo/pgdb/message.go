@@ -96,6 +96,25 @@ func (r *MessageRepo) SaveBody(ctx context.Context, body *entity.MessageBody) er
 	return err
 }
 
+func (r *MessageRepo) GetByID(ctx context.Context, id string) (*entity.Message, error) {
+	sql, args, _ := r.Builder.
+		Select("id", "mailbox_id", "uid", "folder", "subject", "from_addr", "to_addr",
+			"date", "body_preview", "has_attachments", "seen", "flags", "synced_at", "hash").
+		From("mail_sync.messages").
+		Where("id = ?", id).
+		ToSql()
+	var msg entity.Message
+	err := r.CtxGetter.DefaultTrOrDB(ctx, r.Pool).QueryRow(ctx, sql, args...).Scan(
+		&msg.ID, &msg.MailboxID, &msg.UID, &msg.Folder, &msg.Subject, &msg.From,
+		&msg.To, &msg.Date, &msg.BodyPreview, &msg.HasAttachments, &msg.Seen,
+		&msg.Flags, &msg.SyncedAt, &msg.Hash,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, repoerrs.ErrNotFound
+	}
+	return &msg, err
+}
+
 func (r *MessageRepo) GetBody(ctx context.Context, messageID string) (*entity.MessageBody, error) {
 	sql, args, _ := r.Builder.
 		Select("message_id", "body", "body_html", "created_at", "updated_at").
